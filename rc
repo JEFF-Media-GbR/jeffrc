@@ -74,6 +74,29 @@ function debug() {
   fi
 }
 
+function create_config() {
+  if [[ ! -d ~/.jeffrc ]]; then
+    mkdir ~/.jeffrc
+    config_changed=1
+  done
+  if [[ ! -f ~/.jeffrc/hosts ]]; then
+    cat << EOF > ~/.jeffrc/hosts
+# When you use "all" instead of a hostname, the following hosts will be used.
+# Hostnames are seperated by spaces
+all_hosts="localhost"
+EOF
+  config_changed=1
+  fi
+  
+  if [[ "$config_changed" -eq 1 ]]; then
+    echo "Your config at ~/.jeffrc/ was incomplete and has been regenerated. Please adjust the settings to your needs and rerun the command."
+    exit 0
+  fi
+}
+
+create_config
+source ~/.jeffrc/hosts
+
 task="$1"
 shift
 
