@@ -1,10 +1,5 @@
 #!/bin/bash
 
-function enable_tty() {
-  interactive="-t"
-  interactive_label="(tty)"
-}
-
 function print_usage() {
    echo "Usage: rc [OPTIONS]... HOST TASK [ARGUMENTS]...
    
@@ -12,6 +7,7 @@ Options"
 echo "  -d;enable debug mode
   -v;enable verbose mode
   -t;enable pseudo-tty for ssh
+  -l;log output when using script task
   -h;print this help message" | column -t -s ";"
 
 echo "
@@ -23,38 +19,6 @@ echo "  sh;execute shell command
   upgrade;installs available apt upgrades
   install;installs apt packages" | column -t -s ";"
 }
-
-while getopts ":dtvh" OPTION; do
-  case $OPTION in
-  d)
-    debug=1
-    ;;
-  v)
-    verbose="-v"
-    ;;
-  t)
-    enable_tty
-    ;;
-  h)
-    print_usage
-    exit 0
-    ;;
-  \?)
-    echo "error: invalid option: '-$OPTARG'" 
-    exit 1
-    ;;
-  esac
-done
-shift $((OPTIND-1))
-
-hosts="$1"
-
-shift
-if [[ "$hosts" == "all" ]]; then
-  hosts="$all_hosts"
-fi
-
-
 
 function echo_bold() {
   echo -ne "\e[1m"
@@ -78,7 +42,7 @@ function create_config() {
   if [[ ! -d ~/.jeffrc ]]; then
     mkdir ~/.jeffrc
     config_changed=1
-  done
+  fi
   if [[ ! -f ~/.jeffrc/hosts ]]; then
     cat << EOF > ~/.jeffrc/hosts
 # When you use "all" instead of a hostname, the following hosts will be used.
@@ -94,8 +58,47 @@ EOF
   fi
 }
 
+function enable_tty() {
+  interactive="-t"
+  interactive_label="(tty)"
+}
+
 create_config
 source ~/.jeffrc/hosts
+
+while getopts ":dtvlh" OPTION; do
+  case $OPTION in
+  d)
+    debug=1
+    ;;
+  v)
+    verbose="-v"
+    ;;
+  t)
+    enable_tty
+    ;;
+  h)
+    print_usage
+    exit 0
+    ;;
+  l)
+    log=1
+    mkdir -p /var/log/jeffrc || { echo "E: could not create /var/log/jeffrc"; exit 1; }
+    ;;
+  \?)
+    echo "error: invalid option: '-$OPTARG'" 
+    exit 1
+    ;;
+  esac
+done
+shift $((OPTIND-1))
+
+hosts="$1"
+shift
+
+if [[ "$hosts" == "all" ]]; then
+  hosts="$all_hosts"
+fi
 
 task="$1"
 shift
@@ -103,14 +106,13 @@ shift
 if [[ "$task" == "put" ]]; then
   shift
   source="$1"
-  shift
-  dest="$1"
-  shift
+  dest="$2"
+  shift 2
   if [[ -z "$source" ]]; then
-    echo "error: no source file"
+    echo "E: no source file given"
     exit 1
   elif [[ -z "$dest" ]]; then
-    echo "error: no destination file"
+    echo "E: no destination file path given"
     exit 1
   fi
   for host in $hosts; do
@@ -122,6 +124,35 @@ if [[ "$task" == "put" ]]; then
 
   done
   exit 0
+  
+elif [[ "$task" == "script" ]]; then
+  script="$1"
+  shift
+  if [[ -z "$script" ]]; then
+    echo "E: no script name given"
+    exit 1
+  elif [[ ! -f "$script" ]]; then
+    echo "E: script \"$script\" not found"
+    exit 1
+  fi
+  
+  for host in $hosts; do
+
+    echo_bold [ "$host" ]
+    echo_dim " $interactive_label\n"
+    tmpdir_remote=$(ssh $host mktemp -d)
+    if [[ -z "$tmpdir_remote" ]] || [[ "$tmpdir_remote" == "/" ]]; then 
+      echo "E: could not create remote tempdir"
+      exit 1
+    fi
+    script_basename=$(basename $script)
+    scp "$script" "$host":"$tmpdir_remote/$script_basename" > /dev/null || { echo "E: transfer failed."; continue; }
+    echo_dim "Remote working directory: $tmpdir_remote\n"
+    ssh $host "cd $tmpdir_remote || { echo 'E: could not cd into working directory.'; exit 1; }; bash $script_basename; cd /tmp && rm -rf $tmpdir_remote;" | tee /var/log/jeffrc/$script_basename.$host.log
+    echo
+  done
+  exit 0
+
 	
 elif [[ "$task" == "update" ]]; then
   cmd='apt-get update >/dev/null; output=$(LANG=C apt-get --just-print upgrade 2>&1 | perl -ne '\''if (/Inst\s([\w,\-,\d,\.,~,:,\+]+)\s\[([\w,\-,\d,\.,~,:,\+]+)\]\s\(([\w,\-,\d,\.,~,:,\+]+)\)? /i) {print "$1: $2 -\> $3\n"}'\''); if [[ -z "$output" ]]; then echo "All packages on $HOSTNAME are up to date"; else echo "Following packages on $HOSTNAME are outdated:"; echo "$output" | column -s " " -t; fi'
