@@ -127,7 +127,7 @@ if [[ "$task" == "put" ]]; then
   
 elif [[ "$task" == "script" ]]; then
   script_dir="~/.jeffrc/scripts.d"
-  cd "$script_dir" || { echo "E: ~/.jeffrc/scripts.d not found"; exit 1; }
+  cd $script_dir || { echo "E: ~/.jeffrc/scripts.d not found"; exit 1; }
   script="$1"
   shift
   if [[ -z "$script" ]]; then
