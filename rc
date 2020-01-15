@@ -64,7 +64,12 @@ function enable_tty() {
 }
 
 create_config
-source ~/.jeffrc/hosts
+
+if [[ -z "$HOSTS" ]]; then
+  source ~/.jeffrc/hosts
+else
+  all_hosts="$HOSTS"
+fi
 
 while getopts ":dtvlh" OPTION; do
   case $OPTION in
