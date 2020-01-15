@@ -126,7 +126,7 @@ if [[ "$task" == "put" ]]; then
   exit 0
   
 elif [[ "$task" == "script" ]]; then
-  script_dir="~/.jeffrc/scripts.d"
+  script_dir=~/.jeffrc/scripts.d
   cd $script_dir || { echo "E: ~/.jeffrc/scripts.d not found"; exit 1; }
   script="$1"
   shift
