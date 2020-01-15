@@ -126,6 +126,8 @@ if [[ "$task" == "put" ]]; then
   exit 0
   
 elif [[ "$task" == "script" ]]; then
+  script_dir="~/.jeffrc/scripts.d"
+  cd "$script_dir" || { echo "E: ~/.jeffrc/scripts.d not found"; exit 1; }
   script="$1"
   shift
   if [[ -z "$script" ]]; then
@@ -140,16 +142,30 @@ elif [[ "$task" == "script" ]]; then
 
     echo_bold [ "$host" ]
     echo_dim " $interactive_label\n"
-    tmpdir_remote=$(ssh $host mktemp -d)
-    if [[ -z "$tmpdir_remote" ]] || [[ "$tmpdir_remote" == "/" ]]; then 
-      echo "E: could not create remote tempdir"
-      exit 1
+    
+    if [[ "$host" == "localhost" ]]; then
+      tmpdir=$(mktemp -d)
+      if [[ -z "$tmpdir" ]] || [[ "$tmpdir" == "/" ]]; then 
+        echo "E: could not create remote tempdir"
+        exit 1
+      fi
+      script_basename=$(basename $script)
+      scp "$script" "$tmpdir/$script_basename" > /dev/null || { echo "E: transfer failed."; continue; }
+      echo_dim "Working directory: $tmpdir\n"
+      bash -c "cd $tmpdir && bash $script_basename; cd /tmp && rm -rf $tmpdir" | tee /var/log/jeffrc/$script_basename.$host.log
+      echo
+    else
+      tmpdir_remote=$(ssh $host mktemp -d)
+      if [[ -z "$tmpdir_remote" ]] || [[ "$tmpdir_remote" == "/" ]]; then 
+        echo "E: could not create remote tempdir"
+        exit 1
+      fi
+      script_basename=$(basename $script)
+      scp "$script" "$host":"$tmpdir_remote/$script_basename" > /dev/null || { echo "E: transfer failed."; continue; }
+      echo_dim "Remote working directory: $tmpdir_remote\n"
+      ssh $host "cd $tmpdir_remote || { echo 'E: could not cd into working directory.'; exit 1; }; bash $script_basename; cd /tmp && rm -rf $tmpdir_remote;" | tee /var/log/jeffrc/$script_basename.$host.log
+      echo
     fi
-    script_basename=$(basename $script)
-    scp "$script" "$host":"$tmpdir_remote/$script_basename" > /dev/null || { echo "E: transfer failed."; continue; }
-    echo_dim "Remote working directory: $tmpdir_remote\n"
-    ssh $host "cd $tmpdir_remote || { echo 'E: could not cd into working directory.'; exit 1; }; bash $script_basename; cd /tmp && rm -rf $tmpdir_remote;" | tee /var/log/jeffrc/$script_basename.$host.log
-    echo
   done
   exit 0
 
